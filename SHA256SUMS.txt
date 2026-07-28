@@ -1,0 +1,2 @@
+9f9a4d518ba585610118af07e188f711d3829270bb7f27355d4bedbdd94e03f4  CollagePhotos-0.2.2-release.apk
+680a6459214646f103ff6e8ac25a341eacb585084f4fb9aff7a76895a9338104  CollagePhotos-signing-certificate.pem

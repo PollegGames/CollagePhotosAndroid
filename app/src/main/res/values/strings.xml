@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Collage Photos</string>
+    <string name="wallpaper_description">Fond d’écran animé affichant un collage de photos personnelles.</string>
+</resources>

@@ -1,0 +1,48 @@
+name: Signaler un bug
+description: Signaler un problème reproductible dans Collage Photos
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de ne joindre aucune photo privée, clé de signature ou mot de passe.
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Version de Collage Photos
+      placeholder: "0.2.2"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Téléphone et version Android
+      placeholder: "Sony Xperia XQ-FE54, Android 16"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+      description: Décrire précisément ce qui a été fait.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Résultat attendu
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Résultat observé
+    validations:
+      required: true
