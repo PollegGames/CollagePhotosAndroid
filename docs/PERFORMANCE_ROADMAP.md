@@ -22,23 +22,22 @@ Le travail doit conserver les garanties actuelles :
 
 | Lot | État | Résultat attendu |
 | --- | --- | --- |
-| 0. Outillage et baseline | En cours — SDK 36 manquant | Mesures fiables avant modification |
-| 1. Instrumentation | Implémenté, à valider | Temps de scan, décodage et rendu observables |
-| 2. Fondu synchronisé | Implémenté, à valider | Animation régulière à 60/90/120 Hz |
-| 3. Préchargement borné | Implémenté, à valider | Changement lancé sans attente perceptible |
-| 4. Cadrage intelligent | Implémenté, à valider | Moins de contenu important coupé |
-| 5. Mode photo entière | Implémenté, à valider | Choix explicite entre remplissage et image complète |
-| 6. Optimisations secondaires | Implémenté, à mesurer | Moins d'allocations et meilleure réutilisation mémoire |
-| 7. Validation et release | Bloqué par le SDK 36 | APK testé, documenté et réversible |
+| 0. Outillage et baseline | CI validée, mesures Xperia à faire | Mesures fiables avant modification |
+| 1. Instrumentation | Validation automatique réussie | Temps de scan, décodage et rendu observables |
+| 2. Fondu synchronisé | Validation automatique réussie | Animation régulière à 60/90/120 Hz |
+| 3. Préchargement borné | Validation automatique réussie | Changement lancé sans attente perceptible |
+| 4. Cadrage intelligent | Validation automatique réussie | Moins de contenu important coupé |
+| 5. Mode photo entière | Validation automatique réussie | Choix explicite entre remplissage et image complète |
+| 6. Optimisations secondaires | À mesurer sur Xperia | Moins d'allocations et meilleure réutilisation mémoire |
+| 7. Validation et release | Essai Xperia requis | APK testé, documenté et réversible |
 
 ## Lot 0 — Outillage et baseline
 
 ### Prérequis
 
-Le JDK 17.0.12 est maintenant installé et Gradle démarre correctement lorsqu'il est
-sélectionné dans `JAVA_HOME`. La compilation s'arrête actuellement avant les tâches
-Android, car aucun SDK Android n'est détecté. Il faut installer Android SDK Platform 36
-et Build-Tools 36.0.0, puis définir `ANDROID_HOME` ou `sdk.dir`.
+Le JDK 17.0.12 est installé localement. Le poste ne possède pas de SDK Android local,
+mais GitHub Actions fournit Android SDK Platform 36 et Build-Tools 36.0.0. La première
+validation distante de la branche a réussi le 30 juillet 2026.
 
 Commandes de référence :
 
@@ -66,6 +65,19 @@ Le corpus de test reste hors du dépôt et contient :
 - photos de petite et très grande résolution ;
 - au moins une image corrompue ou inaccessible ;
 - un petit dossier et un dossier contenant plusieurs milliers de fichiers.
+
+### Première validation automatique
+
+Le run GitHub Actions `30578828972` a réussi :
+
+- `testDebugUnitTest` ;
+- `testReleaseUnitTest` ;
+- `lintDebug` ;
+- `assembleDebug` ;
+- publication de l'APK debug comme artefact téléchargeable.
+
+Cette validation confirme la compilation et les tests automatisés. Elle ne remplace pas
+les mesures de fluidité, de cadrage, de mémoire et de batterie sur le Xperia.
 
 ## Lot 1 — Instrumentation sans changement visuel
 
