@@ -11,7 +11,8 @@ data class FloatRectangle(
 }
 
 object MosaicLayoutCalculator {
-    private const val THREE_SPLIT = 0.5f
+    private const val LARGE_REGION_FRACTION = 0.6f
+    private const val SMALL_REGION_FRACTION = 1f - LARGE_REGION_FRACTION
 
     fun calculate(
         width: Float,
@@ -43,27 +44,27 @@ object MosaicLayoutCalculator {
     private fun normalizedRectangles(layout: MosaicLayout): List<FloatRectangle> =
         when (layout) {
             MosaicLayout.THREE_LARGE_TOP -> listOf(
-                rectangle(0f, 0f, 1f, THREE_SPLIT),
-                rectangle(0f, THREE_SPLIT, 0.5f, 1f),
-                rectangle(0.5f, THREE_SPLIT, 1f, 1f),
+                rectangle(0f, 0f, 1f, LARGE_REGION_FRACTION),
+                rectangle(0f, LARGE_REGION_FRACTION, 0.5f, 1f),
+                rectangle(0.5f, LARGE_REGION_FRACTION, 1f, 1f),
             )
 
             MosaicLayout.THREE_LARGE_BOTTOM -> listOf(
-                rectangle(0f, THREE_SPLIT, 1f, 1f),
-                rectangle(0f, 0f, 0.5f, THREE_SPLIT),
-                rectangle(0.5f, 0f, 1f, THREE_SPLIT),
+                rectangle(0f, SMALL_REGION_FRACTION, 1f, 1f),
+                rectangle(0f, 0f, 0.5f, SMALL_REGION_FRACTION),
+                rectangle(0.5f, 0f, 1f, SMALL_REGION_FRACTION),
             )
 
             MosaicLayout.THREE_LARGE_LEFT -> listOf(
-                rectangle(0f, 0f, THREE_SPLIT, 1f),
-                rectangle(THREE_SPLIT, 0f, 1f, 0.5f),
-                rectangle(THREE_SPLIT, 0.5f, 1f, 1f),
+                rectangle(0f, 0f, LARGE_REGION_FRACTION, 1f),
+                rectangle(LARGE_REGION_FRACTION, 0f, 1f, 0.5f),
+                rectangle(LARGE_REGION_FRACTION, 0.5f, 1f, 1f),
             )
 
             MosaicLayout.THREE_LARGE_RIGHT -> listOf(
-                rectangle(THREE_SPLIT, 0f, 1f, 1f),
-                rectangle(0f, 0f, THREE_SPLIT, 0.5f),
-                rectangle(0f, 0.5f, THREE_SPLIT, 1f),
+                rectangle(SMALL_REGION_FRACTION, 0f, 1f, 1f),
+                rectangle(0f, 0f, SMALL_REGION_FRACTION, 0.5f),
+                rectangle(0f, 0.5f, SMALL_REGION_FRACTION, 1f),
             )
         }
 
@@ -118,5 +119,37 @@ object CenterCropCalculator {
                 bottom = top + croppedHeight,
             )
         }
+    }
+}
+
+object FitCenterCalculator {
+    fun destinationRectangle(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        destination: FloatRectangle,
+    ): FloatRectangle? {
+        if (
+            sourceWidth <= 0 ||
+            sourceHeight <= 0 ||
+            destination.width <= 0f ||
+            destination.height <= 0f
+        ) {
+            return null
+        }
+
+        val scale = minOf(
+            destination.width / sourceWidth,
+            destination.height / sourceHeight,
+        )
+        val fittedWidth = sourceWidth * scale
+        val fittedHeight = sourceHeight * scale
+        val left = destination.left + (destination.width - fittedWidth) / 2f
+        val top = destination.top + (destination.height - fittedHeight) / 2f
+        return FloatRectangle(
+            left = left,
+            top = top,
+            right = left + fittedWidth,
+            bottom = top + fittedHeight,
+        )
     }
 }

@@ -6,7 +6,7 @@ import org.junit.Test
 
 class MosaicLayoutCalculatorTest {
     @Test
-    fun `three photo top layout gives half the screen to the large photo`() {
+    fun `three photo top layout gives sixty percent to the large photo`() {
         val cells = MosaicLayoutCalculator.calculate(
             width = 100f,
             height = 200f,
@@ -15,13 +15,13 @@ class MosaicLayoutCalculatorTest {
         )
 
         assertEquals(3, cells.size)
-        assertRectangle(cells[0], 0f, 0f, 100f, 100f)
-        assertRectangle(cells[1], 0f, 100f, 50f, 200f)
-        assertRectangle(cells[2], 50f, 100f, 100f, 200f)
+        assertRectangle(cells[0], 0f, 0f, 100f, 120f)
+        assertRectangle(cells[1], 0f, 120f, 50f, 200f)
+        assertRectangle(cells[2], 50f, 120f, 100f, 200f)
     }
 
     @Test
-    fun `three photo left layout gives half the screen to the large photo`() {
+    fun `three photo left layout gives sixty percent to the large photo`() {
         val cells = MosaicLayoutCalculator.calculate(
             width = 100f,
             height = 300f,
@@ -30,9 +30,9 @@ class MosaicLayoutCalculatorTest {
         )
 
         assertEquals(3, cells.size)
-        assertRectangle(cells[0], 0f, 0f, 50f, 300f)
-        assertRectangle(cells[1], 50f, 0f, 100f, 150f)
-        assertRectangle(cells[2], 50f, 150f, 100f, 300f)
+        assertRectangle(cells[0], 0f, 0f, 60f, 300f)
+        assertRectangle(cells[1], 60f, 0f, 100f, 150f)
+        assertRectangle(cells[2], 60f, 150f, 100f, 300f)
     }
 
     @Test
@@ -63,9 +63,9 @@ class MosaicLayoutCalculatorTest {
             gap = 10f,
         )
 
-        assertRectangle(cells[0], 0f, 0f, 110f, 105f)
-        assertRectangle(cells[1], 0f, 115f, 50f, 220f)
-        assertRectangle(cells[2], 60f, 115f, 110f, 220f)
+        assertRectangle(cells[0], 0f, 0f, 110f, 127f)
+        assertRectangle(cells[1], 0f, 137f, 50f, 220f)
+        assertRectangle(cells[2], 60f, 137f, 110f, 220f)
     }
 
     @Test

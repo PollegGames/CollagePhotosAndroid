@@ -38,6 +38,9 @@ class SettingsRepository(context: Context) {
                 gapDp = preferences[Keys.GAP_DP] ?: 2f,
                 backgroundArgb = preferences[Keys.BACKGROUND_ARGB] ?: 0xFF000000L,
                 fadeEnabled = preferences[Keys.FADE_ENABLED] ?: true,
+                photoScaleMode = PhotoScaleMode.fromStoredValue(
+                    preferences[Keys.PHOTO_SCALE_MODE],
+                ),
                 refreshToken = preferences[Keys.REFRESH_TOKEN] ?: 0L,
                 intervalMillis = normalizeIntervalMillis(
                     preferences[Keys.INTERVAL_MILLIS] ?: DEFAULT_INTERVAL_MILLIS,
@@ -84,6 +87,12 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setPhotoScaleMode(mode: PhotoScaleMode) {
+        dataStore.edit { preferences ->
+            preferences[Keys.PHOTO_SCALE_MODE] = mode.name
+        }
+    }
+
     suspend fun setIntervalMinutes(minutes: Int) {
         val safeMinutes = minutes.coerceIn(
             minimumValue = MIN_INTERVAL_MINUTES,
@@ -127,6 +136,7 @@ class SettingsRepository(context: Context) {
         val GAP_DP = floatPreferencesKey("gap_dp")
         val BACKGROUND_ARGB = longPreferencesKey("background_argb")
         val FADE_ENABLED = booleanPreferencesKey("fade_enabled")
+        val PHOTO_SCALE_MODE = stringPreferencesKey("photo_scale_mode")
         val REFRESH_TOKEN = longPreferencesKey("refresh_token")
         val INTERVAL_MILLIS = longPreferencesKey("interval_millis")
         val LAST_MOSAIC_LAYOUT = stringPreferencesKey("last_mosaic_layout")

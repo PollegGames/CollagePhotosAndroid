@@ -8,11 +8,23 @@ const val MAX_INTERVAL_MINUTES = 60
 const val DEFAULT_INTERVAL_MINUTES = 5
 const val DEFAULT_INTERVAL_MILLIS = DEFAULT_INTERVAL_MINUTES * MILLIS_PER_MINUTE
 
+enum class PhotoScaleMode {
+    FILL,
+    FIT,
+    ;
+
+    companion object {
+        fun fromStoredValue(value: String?): PhotoScaleMode =
+            entries.firstOrNull { it.name == value } ?: FILL
+    }
+}
+
 data class AppSettings(
     val folderUri: String? = null,
     val gapDp: Float = 2f,
     val backgroundArgb: Long = 0xFF000000L,
     val fadeEnabled: Boolean = true,
+    val photoScaleMode: PhotoScaleMode = PhotoScaleMode.FILL,
     val refreshToken: Long = 0L,
     val intervalMillis: Long = DEFAULT_INTERVAL_MILLIS,
     val lastMosaicLayout: MosaicLayout = MosaicLayout.initial,
