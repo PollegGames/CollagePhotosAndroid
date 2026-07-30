@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ch.rex.photocollagewallpaper.data.FolderAccessState
 import ch.rex.photocollagewallpaper.data.FolderImageRepository
+import ch.rex.photocollagewallpaper.data.PhotoScaleMode
 import ch.rex.photocollagewallpaper.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -89,6 +90,12 @@ class WallpaperViewModel(application: Application) : AndroidViewModel(applicatio
     fun setFadeEnabled(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setFadeEnabled(enabled)
+        }
+    }
+
+    fun setPhotoScaleMode(mode: PhotoScaleMode) {
+        viewModelScope.launch {
+            settingsRepository.setPhotoScaleMode(mode)
         }
     }
 

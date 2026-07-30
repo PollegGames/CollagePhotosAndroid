@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ch.rex.photocollagewallpaper.data.FolderAccessState
 import ch.rex.photocollagewallpaper.data.MAX_INTERVAL_MINUTES
 import ch.rex.photocollagewallpaper.data.MIN_INTERVAL_MINUTES
+import ch.rex.photocollagewallpaper.data.PhotoScaleMode
 import ch.rex.photocollagewallpaper.data.intervalMinutes
 import ch.rex.photocollagewallpaper.domain.MosaicLayout
 import ch.rex.photocollagewallpaper.domain.MosaicLayoutCalculator
@@ -149,7 +150,7 @@ private fun WallpaperConfigurationScreen(viewModel: WallpaperViewModel) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "Toujours 3 photos : une grande et deux petites. La grande case est placée aléatoirement en haut, en bas, à gauche ou à droite.",
+                text = "Toujours 3 photos : une grande et deux petites. La disposition s’adapte au format de l’écran et les photos aux cases qui les coupent le moins.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -169,6 +170,11 @@ private fun WallpaperConfigurationScreen(viewModel: WallpaperViewModel) {
                 onColorSaved = viewModel::setBackgroundArgb,
             )
 
+            PhotoScaleModeSetting(
+                selectedMode = state.settings.photoScaleMode,
+                onModeSelected = viewModel::setPhotoScaleMode,
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -176,7 +182,7 @@ private fun WallpaperConfigurationScreen(viewModel: WallpaperViewModel) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Fondu simple",
+                        text = "Fondu fluide",
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
@@ -216,6 +222,42 @@ private fun WallpaperConfigurationScreen(viewModel: WallpaperViewModel) {
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
+    }
+}
+
+@Composable
+private fun PhotoScaleModeSetting(
+    selectedMode: PhotoScaleMode,
+    onModeSelected: (PhotoScaleMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Cadrage des photos",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = selectedMode == PhotoScaleMode.FILL,
+                onClick = { onModeSelected(PhotoScaleMode.FILL) },
+                label = { Text("Remplir") },
+            )
+            FilterChip(
+                selected = selectedMode == PhotoScaleMode.FIT,
+                onClick = { onModeSelected(PhotoScaleMode.FIT) },
+                label = { Text("Photo entière") },
+            )
+        }
+        Text(
+            text = when (selectedMode) {
+                PhotoScaleMode.FILL ->
+                    "Remplit chaque case avec un cadrage adapté au format de la photo."
+
+                PhotoScaleMode.FIT ->
+                    "Affiche toute la photo sans la couper et complète avec la couleur de fond."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -286,7 +328,7 @@ private fun MosaicDiagramCard(backgroundArgb: Long) {
             }
         }
         Text(
-            text = "Ce schéma n’ouvre aucune photo. La disposition réelle sera choisie aléatoirement.",
+            text = "Ce schéma n’ouvre aucune photo. La disposition réelle sera adaptée au format de l’écran.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

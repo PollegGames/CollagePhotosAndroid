@@ -7,6 +7,7 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import ch.rex.photocollagewallpaper.domain.ImageFileFilter
+import ch.rex.photocollagewallpaper.util.PerformanceTrace
 import java.util.concurrent.ConcurrentHashMap
 
 enum class FolderAccessState {
@@ -61,7 +62,12 @@ class FolderImageRepository(context: Context) {
                 }
             }
 
-            val result = scanUncached(folderUri)
+            val result = PerformanceTrace.measure(
+                section = "collage.folder.scan",
+                slowLogThresholdMillis = 50L,
+            ) {
+                scanUncached(folderUri)
+            }
             if (
                 result.accessState == FolderAccessState.AVAILABLE ||
                 result.accessState == FolderAccessState.EMPTY

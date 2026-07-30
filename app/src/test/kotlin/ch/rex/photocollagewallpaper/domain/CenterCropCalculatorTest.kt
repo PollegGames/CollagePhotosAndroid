@@ -59,6 +59,42 @@ class CenterCropCalculatorTest {
         )
     }
 
+    @Test
+    fun `fit center keeps a wide source inside a square destination`() {
+        val destination = requireNotNull(
+            FitCenterCalculator.destinationRectangle(
+                sourceWidth = 400,
+                sourceHeight = 200,
+                destination = FloatRectangle(
+                    left = 0f,
+                    top = 0f,
+                    right = 100f,
+                    bottom = 100f,
+                ),
+            ),
+        )
+
+        assertRectangle(destination, 0f, 25f, 100f, 75f)
+    }
+
+    @Test
+    fun `fit center honors an offset destination`() {
+        val destination = requireNotNull(
+            FitCenterCalculator.destinationRectangle(
+                sourceWidth = 100,
+                sourceHeight = 200,
+                destination = FloatRectangle(
+                    left = 10f,
+                    top = 20f,
+                    right = 110f,
+                    bottom = 120f,
+                ),
+            ),
+        )
+
+        assertRectangle(destination, 35f, 20f, 85f, 120f)
+    }
+
     private fun assertRectangle(
         actual: FloatRectangle,
         left: Float,

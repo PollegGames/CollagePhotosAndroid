@@ -2,6 +2,20 @@
 
 Toutes les modifications importantes de Collage Photos sont documentées ici.
 
+## [Non publié]
+
+- Remplace le fondu à 8 paliers par une animation de 300 ms synchronisée aux frames.
+- Utilise le canvas matériel avec un repli vers le canvas logiciel.
+- Précharge au maximum une prochaine photo avant son échéance.
+- Annule et invalide les préchargements lorsque le dossier, la surface ou le cadrage
+  change.
+- Adapte les dispositions au format de l'écran et favorise les photos dont le ratio
+  correspond à leur case.
+- Agrandit la grande région à 60 % pour éviter les cases excessivement étroites.
+- Ajoute les modes de cadrage « Remplir » et « Photo entière ».
+- Corrige l'orientation EXIF sur le chemin de décodage Android 8.0/8.1.
+- Ajoute des traces de performance sans URI ni nom de fichier.
+
 ## [0.2.2] — 2026-07-28
 
 - Calcule les intervalles écoulés lorsque le fond d’écran redevient visible.

@@ -20,6 +20,7 @@ object MosaicSelectionPlanner {
         excludedItems: Set<T>,
         random: Random = Random.Default,
         maximumCandidatesPerCell: Int = 24,
+        availableLayouts: List<MosaicLayout> = MosaicLayout.entries,
     ): MosaicSelectionPlan<T>? {
         val uniqueItems = availableItems.distinct()
         if (uniqueItems.isEmpty()) {
@@ -49,9 +50,10 @@ object MosaicSelectionPlanner {
                 .distinct()
                 .take(safeMaximum)
         }
+        val layouts = availableLayouts.ifEmpty { MosaicLayout.entries }
 
         return MosaicSelectionPlan(
-            layout = MosaicLayout.entries[random.nextInt(MosaicLayout.entries.size)],
+            layout = layouts[random.nextInt(layouts.size)],
             candidateItemsByCell = candidatesByCell,
         )
     }

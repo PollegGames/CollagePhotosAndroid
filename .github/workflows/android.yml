@@ -53,3 +53,11 @@ jobs:
           testReleaseUnitTest
           lintDebug
           assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: CollagePhotos-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

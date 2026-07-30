@@ -77,4 +77,25 @@ class MosaicSelectionPlannerTest {
             plan.candidateItemsByCell.map(List<String>::first),
         )
     }
+
+    @Test
+    fun `layout is selected only from the compatible choices`() {
+        val compatibleLayouts = listOf(
+            MosaicLayout.THREE_LARGE_TOP,
+            MosaicLayout.THREE_LARGE_BOTTOM,
+        )
+
+        repeat(20) { seed ->
+            val plan = requireNotNull(
+                MosaicSelectionPlanner.plan(
+                    availableItems = List(6) { "photo-$it" },
+                    excludedItems = emptySet(),
+                    random = Random(seed),
+                    availableLayouts = compatibleLayouts,
+                ),
+            )
+
+            assertTrue(plan.layout in compatibleLayouts)
+        }
+    }
 }

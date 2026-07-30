@@ -25,4 +25,14 @@ class AppSettingsIntervalTest {
     fun `milliseconds are converted to complete minutes`() {
         assertEquals(17, intervalMinutes(17L * MILLIS_PER_MINUTE))
     }
+
+    @Test
+    fun `unknown photo scale mode safely falls back to fill`() {
+        assertEquals(PhotoScaleMode.FILL, PhotoScaleMode.fromStoredValue("UNKNOWN"))
+    }
+
+    @Test
+    fun `photo scale mode restores a known value`() {
+        assertEquals(PhotoScaleMode.FIT, PhotoScaleMode.fromStoredValue("FIT"))
+    }
 }

@@ -4,17 +4,23 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
+import android.view.Choreographer
 import android.view.SurfaceHolder
 import ch.rex.photocollagewallpaper.data.AppSettings
 import ch.rex.photocollagewallpaper.data.FolderImageRepository
+import ch.rex.photocollagewallpaper.data.PhotoScaleMode
 import ch.rex.photocollagewallpaper.data.SettingsRepository
 import ch.rex.photocollagewallpaper.domain.MosaicCatchUpPolicy
+import ch.rex.photocollagewallpaper.domain.FadeProgress
 import ch.rex.photocollagewallpaper.domain.ProgressiveMosaicPolicy
 import ch.rex.photocollagewallpaper.image.CollageBitmapLoader
 import ch.rex.photocollagewallpaper.image.CollageRenderer
+import ch.rex.photocollagewallpaper.image.DecodedMosaicCell
+import ch.rex.photocollagewallpaper.image.ImageAspectRatioReader
 import ch.rex.photocollagewallpaper.image.MosaicBitmapSet
 import ch.rex.photocollagewallpaper.image.PreparedMosaic
 import ch.rex.photocollagewallpaper.image.ScaledBitmapDecoder
+import ch.rex.photocollagewallpaper.util.PerformanceTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class PhotoCollageWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = CollageEngine()
@@ -34,9 +42,11 @@ class PhotoCollageWallpaperService : WallpaperService() {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         private val settingsRepository = SettingsRepository(applicationContext)
         private val bitmapDecoder = ScaledBitmapDecoder(contentResolver)
+        private val aspectRatioReader = ImageAspectRatioReader(contentResolver)
         private val collageLoader = CollageBitmapLoader(
             folderImageRepository = FolderImageRepository(applicationContext),
             bitmapDecoder = bitmapDecoder,
+            aspectRatioReader = aspectRatioReader,
         )
         private val renderer = CollageRenderer()
 
@@ -45,6 +55,8 @@ class PhotoCollageWallpaperService : WallpaperService() {
         private var buildingMosaic: BuildingMosaic? = null
         private var workJob: Job? = null
         private var nextStepJob: Job? = null
+        private var prefetchJob: Job? = null
+        private var prefetchedCell: PrefetchedCell? = null
         private var surfaceWidth = 0
         private var surfaceHeight = 0
         private var surfaceReady = false
@@ -54,6 +66,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
         private var pendingStep = false
         private var lastStepElapsed = 0L
         private var randomGeneration = SystemClock.elapsedRealtimeNanos()
+        private var renderGeneration = 0L
         private var initialRetryCount = 0
 
         override fun onCreate(surfaceHolder: SurfaceHolder) {
@@ -77,7 +90,11 @@ class PhotoCollageWallpaperService : WallpaperService() {
                     val appearanceChanged =
                         previousSettings.gapDp != updatedSettings.gapDp ||
                             previousSettings.backgroundArgb != updatedSettings.backgroundArgb ||
-                            previousSettings.fadeEnabled != updatedSettings.fadeEnabled
+                            previousSettings.fadeEnabled != updatedSettings.fadeEnabled ||
+                            previousSettings.photoScaleMode != updatedSettings.photoScaleMode
+                    val geometryChanged =
+                        previousSettings.gapDp != updatedSettings.gapDp ||
+                            previousSettings.photoScaleMode != updatedSettings.photoScaleMode
 
                     when {
                         firstSettings -> {
@@ -89,6 +106,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                         folderChanged -> {
                             workJob?.cancel()
                             nextStepJob?.cancel()
+                            invalidatePrefetch()
                             currentMosaic = null
                             buildingMosaic = null
                             lastStepElapsed = 0L
@@ -104,7 +122,12 @@ class PhotoCollageWallpaperService : WallpaperService() {
                             requestInitialLoadIfPossible(restartRunning = true)
                         }
 
-                        appearanceChanged -> drawCurrentOrBackground()
+                        appearanceChanged -> {
+                            if (geometryChanged) {
+                                invalidatePrefetch()
+                            }
+                            drawCurrentOrBackground()
+                        }
 
                         previousSettings.intervalMillis != updatedSettings.intervalMillis -> {
                             val elapsed = SystemClock.elapsedRealtime() - lastStepElapsed
@@ -128,6 +151,18 @@ class PhotoCollageWallpaperService : WallpaperService() {
             height: Int,
         ) {
             super.onSurfaceChanged(holder, format, width, height)
+            val dimensionsChanged =
+                surfaceWidth > 0 &&
+                    surfaceHeight > 0 &&
+                    (surfaceWidth != width || surfaceHeight != height)
+            if (dimensionsChanged) {
+                if (workJob?.isActive == true) {
+                    markInterruptedWorkPending()
+                }
+                workJob?.cancel()
+                buildingMosaic = null
+                invalidatePrefetch()
+            }
             surfaceReady = true
             surfaceWidth = width
             surfaceHeight = height
@@ -148,6 +183,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
             surfaceReady = false
             workJob?.cancel()
             nextStepJob?.cancel()
+            invalidatePrefetch()
             super.onSurfaceDestroyed(holder)
         }
 
@@ -159,6 +195,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                 }
                 workJob?.cancel()
                 nextStepJob?.cancel()
+                invalidatePrefetch()
                 return
             }
             if (
@@ -175,10 +212,12 @@ class PhotoCollageWallpaperService : WallpaperService() {
         override fun onDestroy() {
             workJob?.cancel()
             nextStepJob?.cancel()
+            invalidatePrefetch()
             scope.cancel()
             currentMosaic = null
             buildingMosaic = null
             bitmapDecoder.clear()
+            aspectRatioReader.clear()
             super.onDestroy()
         }
 
@@ -245,6 +284,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                             canvasWidth = width,
                             canvasHeight = height,
                             gapPixels = gapPixels,
+                            photoScaleMode = loadSettings.photoScaleMode,
                         )
                     }
                     if (isActive && canWork() && savedMosaic?.isComplete == true) {
@@ -263,6 +303,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                         canvasWidth = width,
                         canvasHeight = height,
                         gapPixels = gapPixels,
+                        photoScaleMode = loadSettings.photoScaleMode,
                         randomSeed = seed,
                     )
                 }
@@ -346,6 +387,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
 
             workJob?.cancel()
             workJob = scope.launch {
+                awaitScheduledPrefetch()
                 var activeBuilding = buildingMosaic
                 if (activeBuilding == null) {
                     randomGeneration += 1L
@@ -353,6 +395,8 @@ class PhotoCollageWallpaperService : WallpaperService() {
                         collageLoader.prepare(
                             folderUri = stepSettings.folderUri,
                             excludedImageUris = baseMosaic.imageUris.filterNotNull().toSet(),
+                            canvasWidth = width,
+                            canvasHeight = height,
                             randomSeed = stepSettings.refreshToken xor randomGeneration,
                         )
                     }
@@ -380,7 +424,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                     return@launch
                 }
 
-                repeat(stepCountForThisMosaic) {
+                repeat(stepCountForThisMosaic) { stepIndex ->
                     val cellIndex = activeBuilding.revealedCellCount
                     if (cellIndex !in activeBuilding.prepared.cells.indices) {
                         buildingMosaic = null
@@ -388,7 +432,11 @@ class PhotoCollageWallpaperService : WallpaperService() {
                         return@launch
                     }
 
-                    val decodedCell = runLoading {
+                    awaitScheduledPrefetch()
+                    val decodedCell = consumePrefetchedCell(
+                        building = activeBuilding,
+                        cellIndex = cellIndex,
+                    ) ?: runLoading {
                         collageLoader.decodeCell(
                             preparedMosaic = activeBuilding.prepared,
                             cellIndex = cellIndex,
@@ -396,6 +444,7 @@ class PhotoCollageWallpaperService : WallpaperService() {
                             canvasWidth = width,
                             canvasHeight = height,
                             gapPixels = gapPixels,
+                            photoScaleMode = stepSettings.photoScaleMode,
                         )
                     }
                     if (!isActive || !canWork()) {
@@ -413,6 +462,20 @@ class PhotoCollageWallpaperService : WallpaperService() {
                         bitmap = decodedCell.bitmap,
                         imageUri = decodedCell.imageUri,
                     )
+                    if (stepIndex + 1 < stepCountForThisMosaic) {
+                        prefetchCell(
+                            building = activeBuilding,
+                            cellIndex = cellIndex + 1,
+                            usedImageUris =
+                                activeBuilding.imageUris.filterNotNull().toSet() +
+                                    decodedCell.imageUri,
+                            width = width,
+                            height = height,
+                            gapPixels = gapPixels,
+                            photoScaleMode = stepSettings.photoScaleMode,
+                            generation = renderGeneration,
+                        )
+                    }
                     animateIncomingCell(
                         baseMosaic = baseMosaic,
                         incomingMosaic = transitionMosaic,
@@ -469,23 +532,48 @@ class PhotoCollageWallpaperService : WallpaperService() {
                 return
             }
 
-            repeat(FADE_FRAME_COUNT + 1) { frame ->
+            var firstFrameNanos: Long? = null
+            while (true) {
                 if (!canWork()) {
                     return
                 }
+                val frameTimeNanos = awaitFrameNanos()
+                val startFrameNanos = firstFrameNanos ?: frameTimeNanos.also {
+                    firstFrameNanos = it
+                    PerformanceTrace.mark("collage.fade.first_frame")
+                }
+                val progress = FadeProgress.calculate(
+                    startFrameNanos = startFrameNanos,
+                    currentFrameNanos = frameTimeNanos,
+                    durationNanos = FADE_DURATION_NANOS,
+                )
                 drawFrame(
                     baseMosaic = baseMosaic,
                     incomingMosaic = incomingMosaic,
                     revealedIncomingCells = revealedCellCount,
                     transitioningCellIndex = cellIndex,
-                    transitionProgress = frame.toFloat() / FADE_FRAME_COUNT,
+                    transitionProgress = progress,
                     frameSettings = frameSettings,
                 )
-                if (frame < FADE_FRAME_COUNT) {
-                    delay(FADE_FRAME_DELAY_MILLIS)
+                if (progress >= 1f) {
+                    break
                 }
             }
         }
+
+        private suspend fun awaitFrameNanos(): Long =
+            suspendCancellableCoroutine { continuation ->
+                val choreographer = Choreographer.getInstance()
+                val callback = Choreographer.FrameCallback { frameTimeNanos ->
+                    if (continuation.isActive) {
+                        continuation.resume(frameTimeNanos)
+                    }
+                }
+                choreographer.postFrameCallback(callback)
+                continuation.invokeOnCancellation {
+                    choreographer.removeFrameCallback(callback)
+                }
+            }
 
         private suspend fun <T> runLoading(block: () -> T): T? =
             try {
@@ -518,16 +606,191 @@ class PhotoCollageWallpaperService : WallpaperService() {
 
         private fun scheduleNextStep(delayMillis: Long) {
             nextStepJob?.cancel()
+            prefetchJob?.cancel()
             if (!canWork() || currentMosaic == null) {
                 return
             }
+            val effectiveDelay = delayMillis.coerceAtLeast(MINIMUM_SCHEDULE_DELAY_MILLIS)
+            schedulePrefetch(effectiveDelay)
             nextStepJob = scope.launch {
-                delay(delayMillis.coerceAtLeast(MINIMUM_SCHEDULE_DELAY_MILLIS))
+                delay(effectiveDelay)
                 if (isActive && canWork()) {
+                    PerformanceTrace.mark("collage.step.due")
                     pendingStep = true
                     requestNextPhotosIfPossible(requestedStepCount = 1)
                 }
             }
+        }
+
+        private fun schedulePrefetch(delayUntilStepMillis: Long) {
+            val generation = renderGeneration
+            val prefetchSettings = settings
+            val width = surfaceWidth
+            val height = surfaceHeight
+            val gapPixels = gapPixels(prefetchSettings)
+            val prefetchDelay =
+                (delayUntilStepMillis - PREFETCH_LEAD_TIME_MILLIS).coerceAtLeast(0L)
+            prefetchedCell = null
+            prefetchJob = scope.launch {
+                delay(prefetchDelay)
+                if (!isActive || !canWork() || generation != renderGeneration) {
+                    return@launch
+                }
+                prefetchUpcomingCell(
+                    generation = generation,
+                    prefetchSettings = prefetchSettings,
+                    width = width,
+                    height = height,
+                    gapPixels = gapPixels,
+                )
+            }
+        }
+
+        private suspend fun prefetchUpcomingCell(
+            generation: Long,
+            prefetchSettings: AppSettings,
+            width: Int,
+            height: Int,
+            gapPixels: Float,
+        ) {
+            val baseMosaic = currentMosaic ?: return
+            var activeBuilding = buildingMosaic
+            if (activeBuilding == null) {
+                randomGeneration += 1L
+                val preparedResult = runLoading {
+                    collageLoader.prepare(
+                        folderUri = prefetchSettings.folderUri,
+                        excludedImageUris = baseMosaic.imageUris.filterNotNull().toSet(),
+                        canvasWidth = width,
+                        canvasHeight = height,
+                        randomSeed = prefetchSettings.refreshToken xor randomGeneration,
+                    )
+                }
+                if (
+                    !canWork() ||
+                    generation != renderGeneration ||
+                    currentMosaic !== baseMosaic
+                ) {
+                    return
+                }
+                val prepared = preparedResult?.mosaic ?: return
+                activeBuilding = BuildingMosaic(prepared)
+                buildingMosaic = activeBuilding
+            }
+
+            val cellIndex = activeBuilding.revealedCellCount
+            loadPrefetchedCell(
+                building = activeBuilding,
+                cellIndex = cellIndex,
+                usedImageUris = activeBuilding.imageUris.filterNotNull().toSet(),
+                width = width,
+                height = height,
+                gapPixels = gapPixels,
+                photoScaleMode = prefetchSettings.photoScaleMode,
+                generation = generation,
+            )
+        }
+
+        private fun prefetchCell(
+            building: BuildingMosaic,
+            cellIndex: Int,
+            usedImageUris: Set<Uri>,
+            width: Int,
+            height: Int,
+            gapPixels: Float,
+            photoScaleMode: PhotoScaleMode,
+            generation: Long,
+        ) {
+            prefetchJob?.cancel()
+            prefetchedCell = null
+            prefetchJob = scope.launch {
+                loadPrefetchedCell(
+                    building = building,
+                    cellIndex = cellIndex,
+                    usedImageUris = usedImageUris,
+                    width = width,
+                    height = height,
+                    gapPixels = gapPixels,
+                    photoScaleMode = photoScaleMode,
+                    generation = generation,
+                )
+            }
+        }
+
+        private suspend fun loadPrefetchedCell(
+            building: BuildingMosaic,
+            cellIndex: Int,
+            usedImageUris: Set<Uri>,
+            width: Int,
+            height: Int,
+            gapPixels: Float,
+            photoScaleMode: PhotoScaleMode,
+            generation: Long,
+        ) {
+            if (
+                cellIndex !in building.prepared.cells.indices ||
+                !canWork() ||
+                generation != renderGeneration
+            ) {
+                return
+            }
+            val decodedCell = runLoading {
+                collageLoader.decodeCell(
+                    preparedMosaic = building.prepared,
+                    cellIndex = cellIndex,
+                    usedImageUris = usedImageUris,
+                    canvasWidth = width,
+                    canvasHeight = height,
+                    gapPixels = gapPixels,
+                    photoScaleMode = photoScaleMode,
+                )
+            } ?: return
+            if (
+                canWork() &&
+                generation == renderGeneration &&
+                buildingMosaic === building
+            ) {
+                prefetchedCell = PrefetchedCell(
+                    generation = generation,
+                    preparedMosaic = building.prepared,
+                    cellIndex = cellIndex,
+                    decodedCell = decodedCell,
+                )
+                PerformanceTrace.mark("collage.prefetch.ready")
+            }
+        }
+
+        private suspend fun awaitScheduledPrefetch() {
+            val scheduledJob = prefetchJob ?: return
+            scheduledJob.join()
+            if (prefetchJob === scheduledJob) {
+                prefetchJob = null
+            }
+        }
+
+        private fun consumePrefetchedCell(
+            building: BuildingMosaic,
+            cellIndex: Int,
+        ): DecodedMosaicCell? {
+            val candidate = prefetchedCell
+            prefetchedCell = null
+            return candidate
+                ?.takeIf {
+                    it.generation == renderGeneration &&
+                        it.preparedMosaic === building.prepared &&
+                        it.cellIndex == cellIndex
+                }
+                ?.decodedCell
+                ?.also {
+                    PerformanceTrace.mark("collage.prefetch.consumed")
+                }
+        }
+
+        private fun invalidatePrefetch() {
+            renderGeneration += 1L
+            prefetchJob?.cancel()
+            prefetchJob = null
+            prefetchedCell = null
         }
 
         private fun markInterruptedWorkPending() {
@@ -562,24 +825,34 @@ class PhotoCollageWallpaperService : WallpaperService() {
 
             var canvas: android.graphics.Canvas? = null
             try {
-                canvas = surfaceHolder.lockCanvas()
-                canvas?.let { lockedCanvas ->
-                    renderer.drawFrame(
-                        canvas = lockedCanvas,
-                        baseMosaic = baseMosaic,
-                        incomingMosaic = incomingMosaic,
-                        revealedIncomingCells = revealedIncomingCells,
-                        transitioningCellIndex = transitioningCellIndex,
-                        transitionProgress = transitionProgress,
-                        gapPixels = gapPixels(frameSettings),
-                        backgroundArgb = frameSettings.backgroundArgb,
-                        showPlaceholder =
-                            baseMosaic == null &&
-                                incomingMosaic == null &&
-                                frameSettings.folderUri != null,
-                    )
+                canvas = try {
+                    surfaceHolder.lockHardwareCanvas()
+                } catch (_: RuntimeException) {
+                    surfaceHolder.lockCanvas()
                 }
-            } catch (_: IllegalArgumentException) {
+                canvas?.let { lockedCanvas ->
+                    PerformanceTrace.measure(
+                        section = "collage.frame.draw",
+                        slowLogThresholdMillis = SLOW_FRAME_MILLIS,
+                    ) {
+                        renderer.drawFrame(
+                            canvas = lockedCanvas,
+                            baseMosaic = baseMosaic,
+                            incomingMosaic = incomingMosaic,
+                            revealedIncomingCells = revealedIncomingCells,
+                            transitioningCellIndex = transitioningCellIndex,
+                            transitionProgress = transitionProgress,
+                            gapPixels = gapPixels(frameSettings),
+                            backgroundArgb = frameSettings.backgroundArgb,
+                            photoScaleMode = frameSettings.photoScaleMode,
+                            showPlaceholder =
+                                baseMosaic == null &&
+                                    incomingMosaic == null &&
+                                    frameSettings.folderUri != null,
+                        )
+                    }
+                }
+            } catch (_: RuntimeException) {
                 markInterruptedWorkPending()
             } finally {
                 canvas?.let { lockedCanvas ->
@@ -632,11 +905,19 @@ class PhotoCollageWallpaperService : WallpaperService() {
         }
     }
 
+    private data class PrefetchedCell(
+        val generation: Long,
+        val preparedMosaic: PreparedMosaic,
+        val cellIndex: Int,
+        val decodedCell: DecodedMosaicCell,
+    )
+
     private companion object {
-        const val FADE_FRAME_COUNT = 8
-        const val FADE_FRAME_DELAY_MILLIS = 32L
+        const val FADE_DURATION_NANOS = 300L * 1_000_000L
+        const val PREFETCH_LEAD_TIME_MILLIS = 10_000L
         const val MINIMUM_SCHEDULE_DELAY_MILLIS = 1_000L
         const val INITIAL_RETRY_DELAY_MILLIS = 5_000L
         const val MAXIMUM_INITIAL_RETRIES = 3
+        const val SLOW_FRAME_MILLIS = 17L
     }
 }
